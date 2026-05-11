@@ -20,21 +20,23 @@ extern "C" {
     fn bluepad32_get_gamepad_state() -> GamepadState;
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     sys::link_patches();
 
     // Spawn our robot logic on a Rust thread BEFORE handing
     // control to BTstack. This thread runs concurrently with
     // the BT stack via FreeRTOS scheduling.
     thread::spawn(|| {
-        robot_loop();
+        let _ = robot_loop();
     });
 
     // Hand control to BTstack — never returns.
     unsafe { bluepad32_platform_run() };
+
+    Ok(())
 }
 
-fn robot_loop() {
+fn robot_loop() -> anyhow::Result<()> {
     loop {
         let state = unsafe { bluepad32_get_gamepad_state() };
 
