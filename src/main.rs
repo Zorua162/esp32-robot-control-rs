@@ -63,6 +63,10 @@ fn robot_loop() -> anyhow::Result<()> {
     let mut encoder = CopyEncoder::new()?;
 
     set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::red())?;
+    // Allow time for BT to start and show if a crash happens
+
+    thread::sleep(Duration::from_millis(500));
+    set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::blue())?;
 
     loop {
         let state = unsafe { bluepad32_get_gamepad_state() };
@@ -80,7 +84,11 @@ fn robot_loop() -> anyhow::Result<()> {
                 _ => Ok(()),
             }?
         } else {
-            println!("Waiting for controller...");
+            // Slow pulse blue = waiting for controller
+            set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::green())?;
+            thread::sleep(Duration::from_millis(400));
+            set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::off())?;
+            thread::sleep(Duration::from_millis(100));
         }
 
         thread::sleep(Duration::from_millis(50)); // ~20hz

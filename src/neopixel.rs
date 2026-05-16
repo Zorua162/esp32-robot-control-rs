@@ -113,6 +113,10 @@ impl RGB {
         })
     }
 
+    pub fn off() -> Self {
+        Self { r: 0, g: 0, b: 0 }
+    }
+
     pub fn red() -> Self {
         Self { r: 255, g: 0, b: 0 }
     }
