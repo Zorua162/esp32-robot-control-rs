@@ -79,7 +79,7 @@ fn robot_loop() -> anyhow::Result<()> {
             );
 
             match state.axis_x {
-                -512..0 => set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::purple()),
+                -512..1 => set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::purple()),
                 1..512 => set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::yellow()),
                 _ => Ok(()),
             }?
