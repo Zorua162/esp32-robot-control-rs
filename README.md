@@ -39,3 +39,5 @@ Was fixed previously by editing sdkconfig.defaults (forgot exactly which line so
 but I think its `CONFIG_BLUEPAD32_PLATFORM_CUSTOM=y`, telling it to use a custom platform)
 However, note that this gets cached into the target folder, so when making a change its
 necessary to then run `cargo clean` first before the change will take
+
+(The active ones can be found with `find . -name sdkconfig -not -path "*/node_modules/*" 2>/dev/null`)
