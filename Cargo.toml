@@ -30,6 +30,11 @@ embassy-time = { version = "0.5", features = ["generic-queue-8"] }
 
 anyhow = "1.0.102"
 
+[patch.crates-io]
+esp-idf-sys = { git = "https://github.com/esp-rs/esp-idf-sys.git" }
+esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal.git" }
+esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc.git" }
+
 [build-dependencies]
 embuild = "0.33"
 [package.metadata.esp-idf-sys]
