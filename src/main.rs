@@ -50,7 +50,7 @@ fn main() -> anyhow::Result<()> {
 
 fn robot_loop() -> anyhow::Result<()> {
     let peripherals = Peripherals::take()?;
-    let led_pin = peripherals.pins.gpio8;
+    let led_pin = peripherals.pins.gpio21;
 
     let mut tx_channel = TxChannelDriver::new(
         led_pin,
