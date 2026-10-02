@@ -184,7 +184,7 @@ fn do_turn(state: &GamepadState, motor: &mut MotorPins) -> Result<(), EspError> 
             motor.in4.set_high()?;
         }
         n if n > DEAD_ZONE => {
-            // Forward!
+            // Right?
             motor.in1.set_low()?;
             motor.in2.set_high()?;
 
