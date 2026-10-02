@@ -3,78 +3,85 @@
 
 use anyhow::{bail, Result};
 use esp_idf_hal::{
-    delay::FreeRtos,
+    gpio::OutputPin,
     rmt::{
+        config::TxChannelConfig,
         config::{Loop, TransmitConfig},
         encoder::CopyEncoder,
         PinState, Pulse, PulseTicks, Symbol, TxChannelDriver,
     },
+    units::Hertz,
 };
 
-#[cfg(all(
-    esp_idf_soc_rmt_supported,
-    esp_idf_version_at_least_5_0_0,
-    not(feature = "rmt-legacy")
-))]
-#[cfg(all(
-    esp_idf_soc_rmt_supported,
-    esp_idf_version_at_least_5_0_0,
-    not(feature = "rmt-legacy")
-))]
+const RMT_RESOLUTION: Hertz = Hertz(10_000_000);
 
-pub fn _disco(tx_channel: &mut TxChannelDriver, encoder: &mut CopyEncoder) -> Result<()> {
-    // 3 seconds white at 10% brightness
-
-    set_neopixel_colour(tx_channel, encoder, RGB::new(25, 25, 25))?;
-    FreeRtos::delay_ms(3000);
-
-    // Infinite rainbow loop at 20% brightness
-    (0..360).cycle().try_for_each(|hue| {
-        FreeRtos::delay_ms(10);
-        let rgb = RGB::_from_hsv(hue, 100, 20)?;
-        set_neopixel_colour(tx_channel, encoder, rgb)
-    })
+pub struct NeoPixelControl<'d> {
+    tx: TxChannelDriver<'d>,
+    encoder: CopyEncoder,
+    t0: Symbol,
+    t1: Symbol,
 }
 
-pub fn set_neopixel_colour(
-    tx: &mut TxChannelDriver,
-    encoder: &mut CopyEncoder,
-    rgb: RGB,
-) -> Result<()> {
-    // WS2812 timing (at 10MHz, 1 tick = 100ns):
-    //   T0H = 350ns  → 4 ticks (rounded to nearest 100ns)
-    //   T0L = 800ns  → 8 ticks
-    //   T1H = 700ns  → 7 ticks
-    //   T1L = 600ns  → 6 ticks
-    let t0 = Symbol::new(
-        Pulse::new(PinState::High, PulseTicks::new(4)?),
-        Pulse::new(PinState::Low, PulseTicks::new(8)?),
-    );
-    let t1 = Symbol::new(
-        Pulse::new(PinState::High, PulseTicks::new(7)?),
-        Pulse::new(PinState::Low, PulseTicks::new(6)?),
-    );
-
-    // WS2812 wants GRB order, MSB first — 24 bits total
-    let color: u32 = rgb.into();
-    let signal: Vec<Symbol> = (0..24)
-        .rev()
-        .map(|i| if (color >> i) & 1 == 1 { t1 } else { t0 })
-        .collect();
-
-    // SAFETY: encoder and signal are valid for the duration of this blocking call
-    unsafe {
-        tx.start_send(
-            encoder,
-            &signal,
-            &TransmitConfig {
-                loop_count: Loop::Count(1),
+impl<'d> NeoPixelControl<'d> {
+    pub fn new(pin: impl OutputPin + 'd) -> Result<Self> {
+        let tx = TxChannelDriver::new(
+            pin,
+            &TxChannelConfig {
+                resolution: RMT_RESOLUTION,
                 ..Default::default()
             },
-        )
-    }?; // Block until transmission is complete
+        )?;
+        let encoder = CopyEncoder::new()?;
+        // WS2812 timing (at 10MHz, 1 tick = 100ns):
+        //   T0H = 350ns  → 4 ticks (rounded to nearest 100ns)
+        //   T0L = 800ns  → 8 ticks
+        //   T1H = 700ns  → 7 ticks
+        //   T1L = 600ns  → 6 ticks
+        let t0 = Symbol::new(
+            Pulse::new(PinState::High, PulseTicks::new(4)?),
+            Pulse::new(PinState::Low, PulseTicks::new(8)?),
+        );
+        let t1 = Symbol::new(
+            Pulse::new(PinState::High, PulseTicks::new(7)?),
+            Pulse::new(PinState::Low, PulseTicks::new(6)?),
+        );
 
-    Ok(())
+        Ok(Self {
+            tx,
+            encoder,
+            t0,
+            t1,
+        })
+    }
+
+    pub fn set_colour(&mut self, rgb: RGB) -> Result<()> {
+        // WS2812 wants GRB order, MSB first — 24 bits total
+        let color: u32 = rgb.into();
+        let signal: Vec<Symbol> = (0..24)
+            .rev()
+            .map(|i| {
+                if (color >> i) & 1 == 1 {
+                    self.t1
+                } else {
+                    self.t0
+                }
+            })
+            .collect();
+
+        // SAFETY: encoder and signal are valid for the duration of this blocking call
+        unsafe {
+            self.tx.start_send(
+                &mut self.encoder,
+                &signal,
+                &TransmitConfig {
+                    loop_count: Loop::Count(1),
+                    ..Default::default()
+                },
+            )
+        }?;
+
+        Ok(())
+    }
 }
 
 pub struct RGB {

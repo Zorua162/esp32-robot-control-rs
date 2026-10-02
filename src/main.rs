@@ -2,8 +2,6 @@ use esp_idf_hal::sys::EspError;
 use esp_idf_hal::{
     gpio::{Output, PinDriver, Pins},
     peripherals::Peripherals,
-    rmt::{config::TxChannelConfig, encoder::CopyEncoder, TxChannelDriver},
-    units::Hertz,
 };
 
 use esp_idf_svc::hal::gpio::{Gpio1, Gpio2, Gpio3, Gpio4};
@@ -13,9 +11,7 @@ use std::time::Duration;
 
 mod neopixel;
 
-use crate::neopixel::{set_neopixel_colour, RGB};
-
-const RMT_RESOLUTION: Hertz = Hertz(10_000_000);
+use crate::neopixel::{NeoPixelControl, RGB};
 
 const DEAD_ZONE: i32 = 100;
 
@@ -93,21 +89,13 @@ fn robot_loop() -> anyhow::Result<()> {
 
     let led_pin = gpio21;
 
-    let mut tx_channel = TxChannelDriver::new(
-        led_pin,
-        &TxChannelConfig {
-            resolution: RMT_RESOLUTION,
-            ..Default::default()
-        },
-    )?;
+    let mut pixel: NeoPixelControl = NeoPixelControl::new(led_pin)?;
 
-    let mut encoder = CopyEncoder::new()?;
+    pixel.set_colour(RGB::red())?;
 
-    set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::red())?;
     // Allow time for BT to start and show if a crash happens
-
     thread::sleep(Duration::from_millis(500));
-    set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::blue())?;
+    pixel.set_colour(RGB::blue())?;
 
     let mut motor = MotorPins::new(gpio1, gpio2, gpio3, gpio4)?;
 
@@ -115,24 +103,18 @@ fn robot_loop() -> anyhow::Result<()> {
         let state = unsafe { bluepad32_get_gamepad_state() };
 
         if state.connected {
-            set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::green())?;
+            pixel.set_colour(RGB::green())?;
             println!(
                 "left=({}, {}) right=({}, {}) buttons={:#010b} dpad={}",
                 state.axis_x, state.axis_y, state.axis_rx, state.axis_ry, state.buttons, state.dpad,
             );
 
-            do_movement(&state, &mut motor)?;
-
-            match state.axis_x {
-                -512..1 => set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::purple()),
-                1..512 => set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::yellow()),
-                _ => Ok(()),
-            }?
+            do_movement(&state, &mut motor, &mut pixel)?;
         } else {
             // Slow pulse blue = waiting for controller
-            set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::green())?;
+            pixel.set_colour(RGB::blue())?;
             thread::sleep(Duration::from_millis(400));
-            set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::off())?;
+            pixel.set_colour(RGB::off())?;
             thread::sleep(Duration::from_millis(100));
         }
 
@@ -140,15 +122,21 @@ fn robot_loop() -> anyhow::Result<()> {
     }
 }
 
-fn do_movement(state: &GamepadState, motor: &mut MotorPins) -> Result<(), EspError> {
+fn do_movement(
+    state: &GamepadState,
+    motor: &mut MotorPins,
+    pixel: &mut NeoPixelControl<'_>,
+) -> Result<(), anyhow::Error> {
     // Figure out where the controller is pointing:
 
     // If up or down is greater than left or right then its forward or backwards
     // Otherwise we need to turn
 
     if i32::abs(state.axis_y) > i32::abs(state.axis_y) {
+        pixel.set_colour(RGB::yellow())?;
         do_forward_backward(state, motor)?;
     } else {
+        pixel.set_colour(RGB::purple())?;
         do_turn(state, motor)?;
     };
 
