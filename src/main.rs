@@ -132,7 +132,7 @@ fn do_movement(
     // If up or down is greater than left or right then its forward or backwards
     // Otherwise we need to turn
 
-    if i32::abs(state.axis_y) > i32::abs(state.axis_y) {
+    if i32::abs(state.axis_y) > i32::abs(state.axis_x) {
         pixel.set_colour(RGB::yellow())?;
         do_forward_backward(state, motor)?;
     } else {
