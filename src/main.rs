@@ -157,7 +157,7 @@ fn do_movement(state: &GamepadState, motor: &mut MotorPins) -> Result<(), EspErr
 
 fn do_forward_backward(state: &GamepadState, motor: &mut MotorPins) -> Result<(), EspError> {
     match state.axis_y {
-        n if n > -512 && n < -DEAD_ZONE => {
+        n if n < -DEAD_ZONE => {
             // Backwards
             motor.in1.set_low()?;
             motor.in2.set_high()?;
@@ -165,15 +165,7 @@ fn do_forward_backward(state: &GamepadState, motor: &mut MotorPins) -> Result<()
             motor.in3.set_low()?;
             motor.in4.set_high()?;
         }
-        n if n > -DEAD_ZONE && n < DEAD_ZONE => {
-            // STOP
-            motor.in1.set_high()?;
-            motor.in2.set_high()?;
-
-            motor.in3.set_high()?;
-            motor.in4.set_high()?;
-        }
-        n if n > DEAD_ZONE && n < 512 => {
+        n if n > DEAD_ZONE => {
             // Forward!
             motor.in1.set_high()?;
             motor.in2.set_low()?;
@@ -181,14 +173,21 @@ fn do_forward_backward(state: &GamepadState, motor: &mut MotorPins) -> Result<()
             motor.in3.set_high()?;
             motor.in4.set_low()?;
         }
-        _ => (),
+        _ => {
+            // STOP
+            motor.in1.set_high()?;
+            motor.in2.set_high()?;
+
+            motor.in3.set_high()?;
+            motor.in4.set_high()?;
+        }
     };
     Ok(())
 }
 
 fn do_turn(state: &GamepadState, motor: &mut MotorPins) -> Result<(), EspError> {
-    match state.axis_y {
-        n if n > -512 && n < -DEAD_ZONE => {
+    match state.axis_x {
+        n if n < -DEAD_ZONE => {
             // Left?
             motor.in1.set_high()?;
             motor.in2.set_low()?;
@@ -196,15 +195,7 @@ fn do_turn(state: &GamepadState, motor: &mut MotorPins) -> Result<(), EspError> 
             motor.in3.set_low()?;
             motor.in4.set_high()?;
         }
-        n if n > -DEAD_ZONE && n < DEAD_ZONE => {
-            // STOP
-            motor.in1.set_high()?;
-            motor.in2.set_high()?;
-
-            motor.in3.set_high()?;
-            motor.in4.set_high()?;
-        }
-        n if n > DEAD_ZONE && n < 512 => {
+        n if n > DEAD_ZONE => {
             // Forward!
             motor.in1.set_low()?;
             motor.in2.set_high()?;
@@ -212,7 +203,14 @@ fn do_turn(state: &GamepadState, motor: &mut MotorPins) -> Result<(), EspError> 
             motor.in3.set_high()?;
             motor.in4.set_low()?;
         }
-        _ => (),
+        _ => {
+            // STOP
+            motor.in1.set_high()?;
+            motor.in2.set_high()?;
+
+            motor.in3.set_high()?;
+            motor.in4.set_high()?;
+        }
     };
     Ok(())
 }
