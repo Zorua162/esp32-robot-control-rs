@@ -52,6 +52,10 @@ impl<'d> MotorPins<'d> {
         gpio4: Gpio4<'d>,
     ) -> Result<Self, EspError> {
         Ok(Self {
+            // GPIO1 - in1
+            // GPIO2 - in2
+            // GPIO3 - in3
+            // GPIO4 - in4
             in1: PinDriver::output(gpio1)?,
             in2: PinDriver::output(gpio2)?,
             in3: PinDriver::output(gpio3)?,
@@ -105,10 +109,6 @@ fn robot_loop() -> anyhow::Result<()> {
     thread::sleep(Duration::from_millis(500));
     set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::blue())?;
 
-    // GPIO1 - in1
-    // GPIO2 - in2
-    // GPIO3 - in3
-    // GPIO4 - in4
     let mut motor = MotorPins::new(gpio1, gpio2, gpio3, gpio4)?;
 
     loop {
