@@ -1,4 +1,5 @@
 use esp_idf_hal::{
+    gpio::PinDriver,
     peripherals::Peripherals,
     rmt::{config::TxChannelConfig, encoder::CopyEncoder, TxChannelDriver},
     units::Hertz,
@@ -68,6 +69,18 @@ fn robot_loop() -> anyhow::Result<()> {
     thread::sleep(Duration::from_millis(500));
     set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::blue())?;
 
+    // GPIO1 - in1
+    let mut in1 = PinDriver::output(peripherals.pins.gpio1)?;
+    // GPIO2 - in2
+    let mut in2 = PinDriver::output(peripherals.pins.gpio2)?;
+
+    // GPIO3 - in3
+    let mut in3 = PinDriver::output(peripherals.pins.gpio3)?;
+    // GPIO4 - in4
+    let mut in4 = PinDriver::output(peripherals.pins.gpio4)?;
+
+    let dead_zone = 100;
+
     loop {
         let state = unsafe { bluepad32_get_gamepad_state() };
 
@@ -77,6 +90,34 @@ fn robot_loop() -> anyhow::Result<()> {
                 "left=({}, {}) right=({}, {}) buttons={:#010b} dpad={}",
                 state.axis_x, state.axis_y, state.axis_rx, state.axis_ry, state.buttons, state.dpad,
             );
+
+            match state.axis_y {
+                n if n > -512 && n < -dead_zone => {
+                    // Backwards
+                    in1.set_low()?;
+                    in2.set_high()?;
+
+                    in3.set_low()?;
+                    in4.set_high()?;
+                }
+                n if n > -dead_zone && n < dead_zone => {
+                    // STOP
+                    in1.set_high()?;
+                    in2.set_high()?;
+
+                    in3.set_high()?;
+                    in4.set_high()?;
+                }
+                n if n > dead_zone && n < 512 => {
+                    // Forward!
+                    in1.set_high()?;
+                    in2.set_low()?;
+
+                    in3.set_high()?;
+                    in4.set_low()?;
+                }
+                _ => (),
+            };
 
             match state.axis_x {
                 -512..1 => set_neopixel_colour(&mut tx_channel, &mut encoder, RGB::purple()),
