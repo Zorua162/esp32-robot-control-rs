@@ -1,17 +1,18 @@
-use esp_idf_hal::sys::EspError;
-use esp_idf_hal::{
-    gpio::{Output, PinDriver, Pins},
-    peripherals::Peripherals,
-};
+use esp_idf_svc::hal::gpio::{Output, OutputPin, PinDriver, Pins};
+use esp_idf_svc::hal::ledc::{config::TimerConfig, LedcDriver, LedcTimerDriver, Resolution};
+use esp_idf_svc::hal::peripherals::Peripherals;
+use esp_idf_svc::hal::units::FromValueType;
+use esp_idf_svc::log::EspLogger;
+use esp_idf_svc::sys::{self, EspError}; // gives you 50.Hz()
 
-use esp_idf_svc::hal::gpio::{Gpio1, Gpio2, Gpio3, Gpio4};
-use esp_idf_svc::sys;
 use std::thread;
 use std::time::Duration;
 
 mod neopixel;
+mod servo;
 
 use crate::neopixel::{NeoPixelControl, RGB};
+use crate::servo::Servo;
 
 const DEAD_ZONE: i32 = 100;
 
@@ -34,18 +35,18 @@ extern "C" {
 }
 
 pub struct MotorPins<'d> {
-    pub in1: PinDriver<'d, Output>,
-    pub in2: PinDriver<'d, Output>,
-    pub in3: PinDriver<'d, Output>,
-    pub in4: PinDriver<'d, Output>,
+    in1: PinDriver<'d, Output>,
+    in2: PinDriver<'d, Output>,
+    in3: PinDriver<'d, Output>,
+    in4: PinDriver<'d, Output>,
 }
 
 impl<'d> MotorPins<'d> {
     pub fn new(
-        gpio1: Gpio1<'d>,
-        gpio2: Gpio2<'d>,
-        gpio3: Gpio3<'d>,
-        gpio4: Gpio4<'d>,
+        gpio1: impl OutputPin + 'd,
+        gpio2: impl OutputPin + 'd,
+        gpio3: impl OutputPin + 'd,
+        gpio4: impl OutputPin + 'd,
     ) -> Result<Self, EspError> {
         Ok(Self {
             // GPIO1 - in1
@@ -60,15 +61,43 @@ impl<'d> MotorPins<'d> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Drive {
+    Stop,
+    Forward,
+    Backward,
+    Left,
+    Right,
+}
+
+impl MotorPins<'_> {
+    fn apply(&mut self, drive: Drive) -> Result<(), EspError> {
+        let (a1, a2, b1, b2) = match drive {
+            Drive::Forward => (true, false, true, false),
+            Drive::Backward => (false, true, false, true),
+            Drive::Left => (true, false, false, true),
+            Drive::Right => (false, true, true, false),
+            Drive::Stop => (true, true, true, true), // brake
+        };
+        self.in1.set_level(a1.into())?;
+        self.in2.set_level(a2.into())?;
+        self.in3.set_level(b1.into())?;
+        self.in4.set_level(b2.into())
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     sys::link_patches();
+    EspLogger::initialize_default();
 
     // Spawn our robot logic on a Rust thread BEFORE handing
     // control to BTstack. This thread runs concurrently with
     // the BT stack via FreeRTOS scheduling.
-    thread::spawn(|| {
-        let _ = robot_loop();
-    });
+    thread::Builder::new().stack_size(8192).spawn(|| {
+        if let Err(e) = robot_loop() {
+            log::error!("robot_loop exited: {e:?}");
+        }
+    })?;
 
     // Hand control to BTstack — never returns.
     unsafe { bluepad32_platform_run() };
@@ -77,21 +106,28 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn robot_loop() -> anyhow::Result<()> {
-    let peripherals = Peripherals::take()?;
+    let Peripherals { pins, ledc, .. } = Peripherals::take()?;
     let Pins {
         gpio1,
         gpio2,
         gpio3,
         gpio4,
+        gpio10,
         gpio21,
         ..
-    } = peripherals.pins;
+    } = pins;
 
     let led_pin = gpio21;
 
     let mut pixel: NeoPixelControl = NeoPixelControl::new(led_pin)?;
 
-    pixel.set_colour(RGB::red())?;
+    let timer = LedcTimerDriver::new(
+        ledc.timer0,
+        &TimerConfig::new()
+            .frequency(50.Hz().into())
+            .resolution(Resolution::Bits14),
+    )?;
+    let mut servo = Servo::new(LedcDriver::new(ledc.channel0, &timer, gpio10)?)?;
 
     // Allow time for BT to start and show if a crash happens
     thread::sleep(Duration::from_millis(500));
@@ -103,14 +139,28 @@ fn robot_loop() -> anyhow::Result<()> {
         let state = unsafe { bluepad32_get_gamepad_state() };
 
         if state.connected {
-            pixel.set_colour(RGB::green())?;
-            println!(
+            log::debug!(
                 "left=({}, {}) right=({}, {}) buttons={:#010b} dpad={}",
-                state.axis_x, state.axis_y, state.axis_rx, state.axis_ry, state.buttons, state.dpad,
+                state.axis_x,
+                state.axis_y,
+                state.axis_rx,
+                state.axis_ry,
+                state.buttons,
+                state.dpad,
             );
 
-            do_movement(&state, &mut motor, &mut pixel)?;
+            let drive = choose_drive(&state);
+            motor.apply(drive)?;
+            pixel.set_colour(match drive {
+                Drive::Forward | Drive::Backward => RGB::yellow(),
+                Drive::Left | Drive::Right => RGB::purple(),
+                Drive::Stop => RGB::green(),
+            })?;
+
+            let angle = ((state.axis_rx.clamp(-512, 512) + 512) * 180 / 1024) as u32;
+            servo.set_angle(angle)?;
         } else {
+            motor.apply(Drive::Stop)?;
             // Slow pulse blue = waiting for controller
             pixel.set_colour(RGB::blue())?;
             thread::sleep(Duration::from_millis(400));
@@ -122,83 +172,19 @@ fn robot_loop() -> anyhow::Result<()> {
     }
 }
 
-fn do_movement(
-    state: &GamepadState,
-    motor: &mut MotorPins,
-    pixel: &mut NeoPixelControl<'_>,
-) -> Result<(), anyhow::Error> {
-    // Figure out where the controller is pointing:
-
-    // If up or down is greater than left or right then its forward or backwards
-    // Otherwise we need to turn
-
-    if i32::abs(state.axis_y) > i32::abs(state.axis_x) {
-        pixel.set_colour(RGB::yellow())?;
-        do_forward_backward(state, motor)?;
+fn choose_drive(state: &GamepadState) -> Drive {
+    let (x, y) = (state.axis_x, state.axis_y);
+    if y.abs() >= x.abs() {
+        match y {
+            n if n < -DEAD_ZONE => Drive::Backward,
+            n if n > DEAD_ZONE => Drive::Forward,
+            _ => Drive::Stop,
+        }
     } else {
-        pixel.set_colour(RGB::purple())?;
-        do_turn(state, motor)?;
-    };
-
-    Ok(())
-}
-
-fn do_forward_backward(state: &GamepadState, motor: &mut MotorPins) -> Result<(), EspError> {
-    match state.axis_y {
-        n if n < -DEAD_ZONE => {
-            // Backwards
-            motor.in1.set_low()?;
-            motor.in2.set_high()?;
-
-            motor.in3.set_low()?;
-            motor.in4.set_high()?;
+        match x {
+            n if n < -DEAD_ZONE => Drive::Left,
+            n if n > DEAD_ZONE => Drive::Right,
+            _ => Drive::Stop,
         }
-        n if n > DEAD_ZONE => {
-            // Forward!
-            motor.in1.set_high()?;
-            motor.in2.set_low()?;
-
-            motor.in3.set_high()?;
-            motor.in4.set_low()?;
-        }
-        _ => {
-            // STOP
-            motor.in1.set_high()?;
-            motor.in2.set_high()?;
-
-            motor.in3.set_high()?;
-            motor.in4.set_high()?;
-        }
-    };
-    Ok(())
-}
-
-fn do_turn(state: &GamepadState, motor: &mut MotorPins) -> Result<(), EspError> {
-    match state.axis_x {
-        n if n < -DEAD_ZONE => {
-            // Left?
-            motor.in1.set_high()?;
-            motor.in2.set_low()?;
-
-            motor.in3.set_low()?;
-            motor.in4.set_high()?;
-        }
-        n if n > DEAD_ZONE => {
-            // Right?
-            motor.in1.set_low()?;
-            motor.in2.set_high()?;
-
-            motor.in3.set_high()?;
-            motor.in4.set_low()?;
-        }
-        _ => {
-            // STOP
-            motor.in1.set_high()?;
-            motor.in2.set_high()?;
-
-            motor.in3.set_high()?;
-            motor.in4.set_high()?;
-        }
-    };
-    Ok(())
+    }
 }

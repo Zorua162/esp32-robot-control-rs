@@ -2,7 +2,7 @@
 #![allow(unexpected_cfgs)]
 
 use anyhow::{bail, Result};
-use esp_idf_hal::{
+use esp_idf_svc::hal::{
     gpio::OutputPin,
     rmt::{
         config::TxChannelConfig,
