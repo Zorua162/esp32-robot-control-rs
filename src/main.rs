@@ -135,9 +135,9 @@ fn robot_loop() -> anyhow::Result<()> {
     )?;
     let mut servo = Servo::new(LedcDriver::new(ledc.channel0, &timer, gpio10)?)?;
 
+    pixel.set_colour(RGB::red())?;
     // Allow time for BT to start and show if a crash happens
     thread::sleep(Duration::from_millis(500));
-    pixel.set_colour(RGB::blue())?;
 
     let mut motor = MotorPins::new(gpio1, gpio2, gpio5, gpio6)?;
 
@@ -168,7 +168,7 @@ fn robot_loop() -> anyhow::Result<()> {
         } else {
             motor.apply(Drive::Stop)?;
             // Slow pulse blue = waiting for controller
-            pixel.set_colour(RGB::blue())?;
+            pixel.set_colour(RGB::red())?;
             thread::sleep(Duration::from_millis(400));
             pixel.set_colour(RGB::off())?;
             thread::sleep(Duration::from_millis(100));
