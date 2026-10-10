@@ -74,10 +74,17 @@ enum Drive {
 impl MotorPins<'_> {
     fn apply(&mut self, drive: Drive) -> Result<(), EspError> {
         let (a1, a2, b1, b2) = match drive {
+            /*
             Drive::Forward => (true, false, true, false),
             Drive::Backward => (false, true, false, true),
             Drive::Left => (true, false, false, true),
             Drive::Right => (false, true, true, false),
+            Drive::Stop => (true, true, true, true), // brake
+            */
+            Drive::Forward => (true, false, false, true),
+            Drive::Backward => (false, true, true, false),
+            Drive::Left => (true, false, true, false),
+            Drive::Right => (false, true, false, true),
             Drive::Stop => (true, true, true, true), // brake
         };
         self.in1.set_level(a1.into())?;
