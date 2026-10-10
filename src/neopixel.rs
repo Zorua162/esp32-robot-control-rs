@@ -166,6 +166,6 @@ impl From<RGB> for u32 {
     ///
     /// Bits 23–16 = G, bits 15–8 = R, bits 7–0 = B
     fn from(rgb: RGB) -> Self {
-        ((rgb.r as u32) << 16) | ((rgb.g as u32) << 8) | rgb.b as u32
+        ((rgb.g as u32) << 16) | ((rgb.r as u32) << 8) | rgb.b as u32
     }
 }
