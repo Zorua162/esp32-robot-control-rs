@@ -5,6 +5,7 @@ use esp_idf_svc::hal::units::FromValueType;
 use esp_idf_svc::log::EspLogger;
 use esp_idf_svc::sys::{self, EspError}; // gives you 50.Hz()
 
+use core::convert::Into;
 use std::thread;
 use std::time::Duration;
 
@@ -43,20 +44,20 @@ pub struct MotorPins<'d> {
 
 impl<'d> MotorPins<'d> {
     pub fn new(
-        gpio1: impl OutputPin + 'd,
-        gpio2: impl OutputPin + 'd,
-        gpio3: impl OutputPin + 'd,
-        gpio4: impl OutputPin + 'd,
+        pin1: impl OutputPin + 'd,
+        pin2: impl OutputPin + 'd,
+        pin3: impl OutputPin + 'd,
+        pin4: impl OutputPin + 'd,
     ) -> Result<Self, EspError> {
         Ok(Self {
             // GPIO1 - in1
             // GPIO2 - in2
-            // GPIO3 - in3
-            // GPIO4 - in4
-            in1: PinDriver::output(gpio1)?,
-            in2: PinDriver::output(gpio2)?,
-            in3: PinDriver::output(gpio3)?,
-            in4: PinDriver::output(gpio4)?,
+            // GPIO5 - in3
+            // GPIO6 - in4
+            in1: PinDriver::output(pin1)?,
+            in2: PinDriver::output(pin2)?,
+            in3: PinDriver::output(pin3)?,
+            in4: PinDriver::output(pin4)?,
         })
     }
 }
@@ -110,14 +111,19 @@ fn robot_loop() -> anyhow::Result<()> {
     let Pins {
         gpio1,
         gpio2,
-        gpio3,
-        gpio4,
+        gpio5,
+        gpio6,
+        gpio7,
         gpio10,
         gpio21,
         ..
     } = pins;
 
     let led_pin = gpio21;
+
+    let mut sleep_pin = PinDriver::output(gpio7)?;
+
+    sleep_pin.set_level(true.into())?;
 
     let mut pixel: NeoPixelControl = NeoPixelControl::new(led_pin)?;
 
@@ -133,7 +139,7 @@ fn robot_loop() -> anyhow::Result<()> {
     thread::sleep(Duration::from_millis(500));
     pixel.set_colour(RGB::blue())?;
 
-    let mut motor = MotorPins::new(gpio1, gpio2, gpio3, gpio4)?;
+    let mut motor = MotorPins::new(gpio1, gpio2, gpio5, gpio6)?;
 
     loop {
         let state = unsafe { bluepad32_get_gamepad_state() };
